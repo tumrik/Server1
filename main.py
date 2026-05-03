@@ -6,11 +6,11 @@ import os
 
 app = FastAPI()
 
-# подключение к базе
+# база
 conn = sqlite3.connect("server.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# создание таблиц
+# таблицы
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS clicks (
     click_id TEXT PRIMARY KEY,
@@ -64,10 +64,7 @@ async def visit(request: Request):
 
     click_id = body.get("click_id")
 
-    cursor.execute(
-        "UPDATE clicks SET visited=1 WHERE click_id=?",
-        (click_id,)
-    )
+    cursor.execute("UPDATE clicks SET visited=1 WHERE click_id=?", (click_id,))
     conn.commit()
 
     return {"status": "visited"}
@@ -77,19 +74,11 @@ async def visit(request: Request):
 def check_limits(ip, user_id):
     now = int(time.time())
 
-    # IP лимит (10 в час)
-    cursor.execute(
-        "SELECT COUNT(*) FROM logs WHERE ip=? AND time > ?",
-        (ip, now - 3600)
-    )
+    cursor.execute("SELECT COUNT(*) FROM logs WHERE ip=? AND time > ?", (ip, now - 3600))
     if cursor.fetchone()[0] > 10:
         return False
 
-    # user лимит (30 в день)
-    cursor.execute(
-        "SELECT COUNT(*) FROM logs WHERE user_id=? AND time > ?",
-        (user_id, now - 86400)
-    )
+    cursor.execute("SELECT COUNT(*) FROM logs WHERE user_id=? AND time > ?", (user_id, now - 86400))
     if cursor.fetchone()[0] > 30:
         return False
 
@@ -101,10 +90,7 @@ def check_limits(ip, user_id):
 def check(click_id: str, request: Request):
     ip = request.client.host
 
-    cursor.execute(
-        "SELECT * FROM clicks WHERE click_id=?",
-        (click_id,)
-    )
+    cursor.execute("SELECT * FROM clicks WHERE click_id=?", (click_id,))
     row = cursor.fetchone()
 
     if not row:
@@ -115,11 +101,9 @@ def check(click_id: str, request: Request):
     if used or not visited:
         return {"valid": False}
 
-    # минимум 10 сек
     if time.time() - created < 10:
         return {"valid": False}
 
-    # лимиты
     if not check_limits(ip, user_id):
         return {"valid": False}
 
@@ -131,10 +115,7 @@ def check(click_id: str, request: Request):
 def use(click_id: str, request: Request):
     ip = request.client.host
 
-    cursor.execute(
-        "SELECT user_id FROM clicks WHERE click_id=?",
-        (click_id,)
-    )
+    cursor.execute("SELECT user_id FROM clicks WHERE click_id=?", (click_id,))
     row = cursor.fetchone()
 
     if row:
@@ -145,20 +126,14 @@ def use(click_id: str, request: Request):
             (ip, user_id, int(time.time()))
         )
 
-    cursor.execute(
-        "UPDATE clicks SET used=1 WHERE click_id=?",
-        (click_id,)
-    )
+    cursor.execute("UPDATE clicks SET used=1 WHERE click_id=?", (click_id,))
     conn.commit()
 
     return {"status": "used"}
 
 
-# 🚀 запуск для Railway
+# 🚀 запуск (ВАЖНО для Railway)
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8000))
-    )
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
