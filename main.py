@@ -2,31 +2,33 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 import time
 import sqlite3
+import os
 
 app = FastAPI()
 
+# подключение к базе
 conn = sqlite3.connect("server.db", check_same_thread=False)
 cursor = conn.cursor()
 
-# таблицы (БЕЗ лишних отступов)
-cursor.execute(
-"""CREATE TABLE IF NOT EXISTS clicks (
-click_id TEXT PRIMARY KEY,
-user_id INTEGER,
-ip TEXT,
-created INTEGER,
-visited INTEGER DEFAULT 0,
-used INTEGER DEFAULT 0
-)"""
+# создание таблиц
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS clicks (
+    click_id TEXT PRIMARY KEY,
+    user_id INTEGER,
+    ip TEXT,
+    created INTEGER,
+    visited INTEGER DEFAULT 0,
+    used INTEGER DEFAULT 0
 )
+""")
 
-cursor.execute(
-"""CREATE TABLE IF NOT EXISTS logs (
-ip TEXT,
-user_id INTEGER,
-time INTEGER
-)"""
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS logs (
+    ip TEXT,
+    user_id INTEGER,
+    time INTEGER
 )
+""")
 
 conn.commit()
 
@@ -35,6 +37,7 @@ SECRET = "Ap41daLd"
 class Click(BaseModel):
     click_id: str
     user_id: int
+
 
 # 🔑 создание задания
 @app.post("/create_click")
@@ -50,7 +53,8 @@ def create_click(data: Click, request: Request):
 
     return {"status": "ok"}
 
-# 🌐 подтверждение посещения сайта
+
+# 🌐 подтверждение посещения
 @app.post("/visit")
 async def visit(request: Request):
     body = await request.json()
@@ -60,15 +64,20 @@ async def visit(request: Request):
 
     click_id = body.get("click_id")
 
-    cursor.execute("UPDATE clicks SET visited=1 WHERE click_id=?", (click_id,))
+    cursor.execute(
+        "UPDATE clicks SET visited=1 WHERE click_id=?",
+        (click_id,)
+    )
     conn.commit()
 
     return {"status": "visited"}
+
 
 # 🔒 лимиты
 def check_limits(ip, user_id):
     now = int(time.time())
 
+    # IP лимит (10 в час)
     cursor.execute(
         "SELECT COUNT(*) FROM logs WHERE ip=? AND time > ?",
         (ip, now - 3600)
@@ -76,6 +85,7 @@ def check_limits(ip, user_id):
     if cursor.fetchone()[0] > 10:
         return False
 
+    # user лимит (30 в день)
     cursor.execute(
         "SELECT COUNT(*) FROM logs WHERE user_id=? AND time > ?",
         (user_id, now - 86400)
@@ -85,12 +95,16 @@ def check_limits(ip, user_id):
 
     return True
 
-# 🔍 проверка задания
+
+# 🔍 проверка
 @app.get("/check/{click_id}")
 def check(click_id: str, request: Request):
     ip = request.client.host
 
-    cursor.execute("SELECT * FROM clicks WHERE click_id=?", (click_id,))
+    cursor.execute(
+        "SELECT * FROM clicks WHERE click_id=?",
+        (click_id,)
+    )
     row = cursor.fetchone()
 
     if not row:
@@ -101,20 +115,26 @@ def check(click_id: str, request: Request):
     if used or not visited:
         return {"valid": False}
 
+    # минимум 10 сек
     if time.time() - created < 10:
         return {"valid": False}
 
+    # лимиты
     if not check_limits(ip, user_id):
         return {"valid": False}
 
     return {"valid": True}
+
 
 # ✅ использование
 @app.post("/use/{click_id}")
 def use(click_id: str, request: Request):
     ip = request.client.host
 
-    cursor.execute("SELECT user_id FROM clicks WHERE click_id=?", (click_id,))
+    cursor.execute(
+        "SELECT user_id FROM clicks WHERE click_id=?",
+        (click_id,)
+    )
     row = cursor.fetchone()
 
     if row:
@@ -125,7 +145,20 @@ def use(click_id: str, request: Request):
             (ip, user_id, int(time.time()))
         )
 
-    cursor.execute("UPDATE clicks SET used=1 WHERE click_id=?", (click_id,))
+    cursor.execute(
+        "UPDATE clicks SET used=1 WHERE click_id=?",
+        (click_id,)
+    )
     conn.commit()
 
     return {"status": "used"}
+
+
+# 🚀 запуск для Railway
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 8000))
+    )
