@@ -22,7 +22,7 @@ async def startup():
 @app.get("/offer")
 async def offer(subid: int, offer_id: int):
     # 👉 сюда вставишь свою CPA ссылку
-    offer_link = f"https://your-cpa-network.com?subid={subid}&offer_id={offer_id}"
+    offer_link = f"https://google.com"
 
     return RedirectResponse(url=offer_link)
 
